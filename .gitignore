@@ -1,0 +1,9 @@
+﻿.env
+__pycache__/
+*.pyc
+.venv/
+raw/
+staging/
+*.log
+# Power BI (if you later commit PBIX, prefer Git LFS)
+*.pbix
