@@ -1,0 +1,16 @@
+name: 'building_admin'
+version: '1.0'
+config-version: 2
+profile: 'building_admin'
+
+model-paths: ['models']
+seed-paths: ['seeds']
+macro-paths: ['macros']
+target-path: 'target'
+clean-targets: ['target','dbt_packages']
+
+models:
+  building_admin:
+    +schema: core      # default layer = core
+    marts:
+      +schema: marts   # BI layer
