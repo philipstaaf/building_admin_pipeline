@@ -1,0 +1,11 @@
+﻿name: runner_test
+on:
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: self-hosted
+    defaults: { run: { shell: pwsh } }
+    steps:
+      - run: echo "Hello from $([Environment]::MachineName)"
+      - run: python --version
