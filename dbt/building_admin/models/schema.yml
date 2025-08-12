@@ -1,0 +1,8 @@
+version: 2
+models:
+  - name: clean_payments
+    columns:
+      - name: payment_id
+        tests: [not_null, unique]
+      - name: invoice_id
+        tests: [not_null]

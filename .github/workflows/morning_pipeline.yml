@@ -1,12 +1,20 @@
 ﻿name: morning_pipeline
 on:
-  workflow_dispatch: {}              # manual "Run workflow" button
+  workflow_dispatch: {}
   schedule:
-    - cron: "0 12 * * *"              # 12:00 UTC = 07:00 America/Lima
+    - cron: "0 12 * * *"   # 12:00 UTC = 07:00 America/Lima
+
+env:
+  PGHOST: localhost
+  PGPORT: 5432
+  PGDATABASE: mcd
+  PGUSER: mcd_loader
+  PGPASSWORD: ${{ secrets.LOADER_PASSWORD }}   # loader user (for ingest.py)
+  DBT_PASSWORD: ${{ secrets.DBT_PASSWORD }}    # dbt user (profiles.yml)
 
 jobs:
   run:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -15,35 +23,21 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install deps
+      - name: Upgrade pip & install deps
+        shell: pwsh
         run: |
-          pip install -r elt/requirements.txt || true
-          pip install dbt-postgres || true
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r elt/requirements.txt
+          pip install dbt-postgres
 
-      - name: Python ingest (placeholder)
+      - name: Ingest (Python)
+        shell: pwsh
         run: python elt/ingest.py
-        continue-on-error: true
-        env:
-          DB_URL: ${{ secrets.DB_URL }}
-          GMAIL_TOKEN: ${{ secrets.GMAIL_TOKEN }}
-          SHEETS_CREDENTIALS_JSON: ${{ secrets.SHEETS_CREDENTIALS_JSON }}
 
       - name: dbt run + test
+        shell: pwsh
         run: |
           cd dbt/building_admin
-          dbt deps || true
-          dbt run  || true
-          dbt test || true
-        env:
-          DBT_PASSWORD: ${{ secrets.DBT_PASSWORD }}
-          # add DBT_HOST/USER/DBNAME/SCHEMA here later if your profiles.yml uses env vars
-
-      - name: Power BI refresh (placeholder)
-        run: python ops/powerbi_refresh.py
-        continue-on-error: true
-        env:
-          AZURE_TENANT_ID:     ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID:     ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          PBI_GROUP_ID:        ${{ secrets.PBI_GROUP_ID }}
-          PBI_DATASET_ID:      ${{ secrets.PBI_DATASET_ID }}
+          dbt deps || $true
+          dbt run
+          dbt test
