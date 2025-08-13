@@ -12,22 +12,21 @@ jobs:
   run:
     runs-on: self-hosted
     timeout-minutes: 60
-    defaults: { run: { shell: pwsh } }
+    defaults: { run: { shell: powershell } }
     env:
-      # Postgres (local)
       PGHOST: localhost
       PGPORT: "5432"
       PGDATABASE: mcd
       PGUSER: mcd_loader
       PGPASSWORD: ${{ secrets.LOADER_PASSWORD }}
       DBT_PASSWORD: ${{ secrets.DBT_PASSWORD }}
-
-      # Power BI (optional — leave blank if not set)
+      # Optional PBI secrets mapped to env if you use the refresh step:
       PBI_TENANT_ID:     ${{ secrets.AZURE_TENANT_ID }}
       PBI_CLIENT_ID:     ${{ secrets.AZURE_CLIENT_ID }}
       PBI_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
       PBI_GROUP_ID:      ${{ secrets.PBI_GROUP_ID }}
       PBI_DATASET_ID:    ${{ secrets.PBI_DATASET_ID }}
+
 
     steps:
       - uses: actions/checkout@v4
