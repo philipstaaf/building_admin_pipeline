@@ -5,7 +5,7 @@ on:
 jobs:
   test:
     runs-on: self-hosted
-    defaults: { run: { shell: pwsh } }
+    defaults: { run: { shell: powershell } }
     steps:
-      - run: echo "Hello from $([Environment]::MachineName)"
+      - run: Write-Host "Hello from $env:COMPUTERNAME"
       - run: python --version
