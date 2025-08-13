@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 raw/
 staging/
+secrets/
 *.log
 # Power BI (if you later commit PBIX, prefer Git LFS)
 *.pbix

@@ -1,4 +1,4 @@
-﻿name: morning_pipeline
+name: morning_pipeline
 
 on:
   workflow_dispatch: {}
@@ -29,9 +29,24 @@ jobs:
       PBI_DATASET_ID:    ${{ secrets.PBI_DATASET_ID }}
       # Optional Chat webhook (leave empty until Workspace is ready)
       CHAT_WEBHOOK_URL:  ${{ secrets.CHAT_WEBHOOK_URL }}
+      # --- GOOGLE (add these) ---
+      GOOGLE_APP_CREDS_JSON:   ${{ secrets.GOOGLE_APP_CREDS_JSON }}
+      DRIVE_FOLDER_ID_PENDING: ${{ secrets.DRIVE_FOLDER_ID_PENDING }}
+      DRIVE_FOLDER_ID_VALIDATED: ${{ secrets.DRIVE_FOLDER_ID_VALIDATED }}
+      INCIDENTS_SHEET_ID:      ${{ secrets.INCIDENTS_SHEET_ID }}
+      USE_SHARED_DRIVE: "true"
+      # File path where we’ll write the JSON so Python can read it
+      GOOGLE_APP_CREDS: ${{ runner.temp }}\google_sa.json
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Write Google creds to file
+        if: ${{ env.GOOGLE_APP_CREDS_JSON != '' }}
+        run: |
+          $p = "$env:RUNNER_TEMP\google_sa.json"
+          Set-Content -Path $p -Value $env:GOOGLE_APP_CREDS_JSON -Encoding UTF8
+          Write-Host "Wrote creds to $p"
 
       # Cache pip wheels between runs (Windows path)
       - name: Cache pip
@@ -58,8 +73,7 @@ jobs:
         run: |
           python --version
           python -c "import sys; print(sys.executable)"
-
-        
+          
 
       - name: Ingest (Drive/Sheets → Postgres RAW)
         run: python elt/ingest.py
