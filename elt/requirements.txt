@@ -8,6 +8,6 @@ requests==2.32.3
 tzdata
 
 # --- dbt (CLI + Postgres adapter) ---
-dbt-core==1.10.8
-dbt-postgres==1.10.8
+dbt-core==1.9.0
+dbt-postgres==1.9.0
 
