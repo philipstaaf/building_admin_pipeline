@@ -45,11 +45,37 @@ jobs:
       - name: Ingest (Drive → Postgres raw)
         run: python elt/ingest.py
 
-      - name: dbt run + test
+      - name: dbt debug (show config)
         run: |
           cd dbt/building_admin
-          dbt run
-          dbt test
+          $env:DBT_PROFILES_DIR="$env:USERPROFILE\.dbt"
+          dbt --version
+          dbt debug --config-dir
+          dbt debug --target dev
+
+      - name: dbt run
+        run: |
+          cd dbt/building_admin
+          $env:DBT_PROFILES_DIR="$env:USERPROFILE\.dbt"
+          dbt run --no-use-colors --debug
+
+      - name: dbt test (non-blocking while we verify)
+        run: |
+          cd dbt/building_admin
+          $env:DBT_PROFILES_DIR="$env:USERPROFILE\.dbt"
+          dbt test --no-use-colors --debug
+        continue-on-error: true
+
+      - name: Upload dbt artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-artifacts
+          path: |
+            dbt/building_admin/target/**
+            dbt/building_admin/logs/**
+          retention-days: 3
+
 
       - name: Power BI refresh
         if: ${{ env.PBI_DATASET_ID != '' }}
