@@ -1,8 +1,9 @@
 ﻿name: morning_pipeline
+
 on:
   workflow_dispatch: {}
-  schedule:
-    - cron: "0 15 * * *"   # 10:00 America/Lima (UTC-5)
+  # schedule:
+  #  - cron: "0 15 * * *"   # 10:00 America/Lima (UTC-5)
 
 concurrency:
   group: morning_pipeline
@@ -20,52 +21,73 @@ jobs:
       PGUSER: mcd_loader
       PGPASSWORD: ${{ secrets.LOADER_PASSWORD }}
       DBT_PASSWORD: ${{ secrets.DBT_PASSWORD }}
-      # Optional PBI secrets mapped to env if you use the refresh step:
+      # Optional PBI secrets:
       PBI_TENANT_ID:     ${{ secrets.AZURE_TENANT_ID }}
       PBI_CLIENT_ID:     ${{ secrets.AZURE_CLIENT_ID }}
       PBI_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
       PBI_GROUP_ID:      ${{ secrets.PBI_GROUP_ID }}
       PBI_DATASET_ID:    ${{ secrets.PBI_DATASET_ID }}
-
+      # Optional Chat webhook (leave empty until Workspace is ready)
+      CHAT_WEBHOOK_URL:  ${{ secrets.CHAT_WEBHOOK_URL }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show Python
+      # Cache pip wheels between runs (Windows path)
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: pip-${{ runner.os }}-${{ hashFiles('elt/requirements.txt') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+
+      # Create virtualenv + install deps from requirements.txt (recommended)
+      - name: Set up venv and install deps
+        run: |
+          python -m venv .venv
+          echo "$env:GITHUB_WORKSPACE\.venv\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip setuptools wheel
+          if (Test-Path "elt/requirements.txt") {
+            .\.venv\Scripts\pip.exe install -r elt/requirements.txt
+          } else {
+            .\.venv\Scripts\pip.exe install psycopg2-binary dbt-postgres
+          }
+
+      - name: Show Python (should be venv)
         run: |
           python --version
           python -c "import sys; print(sys.executable)"
 
-      - name: Install deps (system Python)
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          if (Test-Path "elt/requirements.txt") { pip install -r elt/requirements.txt } else { pip install psycopg2-binary }
-          pip install dbt-postgres
+        
 
-      - name: Ingest (Drive → Postgres raw)
+      - name: Ingest (Drive/Sheets → Postgres RAW)
         run: python elt/ingest.py
 
-      - name: dbt debug (show config)
+      - name: dbt debug (repo-local profile)
+        working-directory: dbt/building_admin
         run: |
-          cd dbt/building_admin
-          $env:DBT_PROFILES_DIR="$env:USERPROFILE\.dbt"
+          $env:DBT_PROFILES_DIR="$env:GITHUB_WORKSPACE\dbt\profiles"
           dbt --version
           dbt debug --config-dir
           dbt debug --target dev
 
-      - name: dbt run
+      # dbt build = run + test
+      - name: dbt build
+        working-directory: dbt/building_admin
         run: |
-          cd dbt/building_admin
-          $env:DBT_PROFILES_DIR="$env:USERPROFILE\.dbt"
-          dbt run --no-use-colors --debug
+          $env:DBT_PROFILES_DIR="$env:GITHUB_WORKSPACE\dbt\profiles"
+          dbt build --no-use-colors --debug
 
-      - name: dbt test (non-blocking while we verify)
+      # Generate docs site (great for data dictionary)
+      - name: dbt docs generate
+        if: always()
+        working-directory: dbt/building_admin
         run: |
-          cd dbt/building_admin
-          $env:DBT_PROFILES_DIR="$env:USERPROFILE\.dbt"
-          dbt test --no-use-colors --debug
-        continue-on-error: true
+          $env:DBT_PROFILES_DIR="$env:GITHUB_WORKSPACE\dbt\profiles"
+          dbt docs generate
 
+      # Upload dbt artifacts + logs for debugging
       - name: Upload dbt artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -76,9 +98,9 @@ jobs:
             dbt/building_admin/logs/**
           retention-days: 3
 
-
-      - name: Power BI refresh
-        if: ${{ env.PBI_DATASET_ID != '' }}
+      # Optional: Power BI refresh (only runs if secrets exist and dbt succeeded)
+      - name: Power BI refresh (fire + wait)
+        if: ${{ success() && env.PBI_DATASET_ID != '' }}
         run: |
           $Tenant  = "$env:PBI_TENANT_ID"
           $Client  = "$env:PBI_CLIENT_ID"
@@ -88,6 +110,32 @@ jobs:
 
           $body = @{ client_id=$Client; client_secret=$Secret; grant_type="client_credentials"; scope="https://analysis.windows.net/powerbi/api/.default" }
           $token = (Invoke-RestMethod -Method Post -Uri "https://login.microsoftonline.com/$Tenant/oauth2/v2.0/token" -Body $body).access_token
+
+          # Start refresh
           Invoke-RestMethod -Method Post -Headers @{ Authorization="Bearer $token" } `
             -Uri "https://api.powerbi.com/v1.0/myorg/groups/$Group/datasets/$Dataset/refreshes" `
-            -Body '{"notifyOption":"MailOnFailure"}' -ContentType "application/json"
+            -Body '{"notifyOption":"MailOnFailure"}' -ContentType "application/json" | Out-Null
+
+          # Poll status
+          $deadline = (Get-Date).AddMinutes(20)
+          do {
+            Start-Sleep -Seconds 15
+            $list = Invoke-RestMethod -Method Get -Headers @{ Authorization="Bearer $token" } `
+              -Uri "https://api.powerbi.com/v1.0/myorg/groups/$Group/datasets/$Dataset/refreshes?`$top=1"
+            $status = $list.value[0].status
+          } while (($status -eq "Unknown" -or $status -eq "InProgress") -and (Get-Date) -lt $deadline)
+
+          if ($status -ne "Completed") { throw "Power BI refresh status: $status" }
+
+      # Optional: Google Chat notifications (skip until webhook is set)
+      - name: Notify Chat on failure
+        if: ${{ failure() && env.CHAT_WEBHOOK_URL != '' }}
+        run: |
+          $payload = @{ text = "⚠️ *morning_pipeline* failed on $env:GITHUB_REPOSITORY at $((Get-Date).ToString('yyyy-MM-dd HH:mm')) Lima." } | ConvertTo-Json
+          Invoke-RestMethod -Method Post -Uri "$env:CHAT_WEBHOOK_URL" -Body $payload -ContentType "application/json"
+
+      - name: Notify Chat on success
+        if: ${{ success() && env.CHAT_WEBHOOK_URL != '' }}
+        run: |
+          $payload = @{ text = "✅ *morning_pipeline* succeeded. dbt build complete; PBI refreshed (if configured)." } | ConvertTo-Json
+          Invoke-RestMethod -Method Post -Uri "$env:CHAT_WEBHOOK_URL" -Body $payload -ContentType "application/json"

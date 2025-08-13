@@ -1,0 +1,13 @@
+building_admin:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('PGHOST') }}"
+      user: "{{ env_var('PGUSER') }}"
+      password: "{{ env_var('DBT_PASSWORD') or env_var('PGPASSWORD') }}"
+      port: "{{ env_var('PGPORT') | int }}"
+      dbname: "{{ env_var('PGDATABASE') }}"
+      schema: building_admin
+      threads: 4
+      connect_timeout: 30
