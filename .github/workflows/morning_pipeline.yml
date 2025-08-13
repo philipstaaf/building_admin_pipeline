@@ -36,7 +36,7 @@ jobs:
       INCIDENTS_SHEET_ID:      ${{ secrets.INCIDENTS_SHEET_ID }}
       USE_SHARED_DRIVE: "true"
       # File path where we’ll write the JSON so Python can read it
-      GOOGLE_APP_CREDS: ${{ runner.temp }}\google_sa.json
+      #GOOGLE_APP_CREDS: ${{ runner.temp }}\google_sa.json
 
     steps:
       - uses: actions/checkout@v4
@@ -44,9 +44,12 @@ jobs:
       - name: Write Google creds to file
         if: ${{ env.GOOGLE_APP_CREDS_JSON != '' }}
         run: |
-          $p = "$env:RUNNER_TEMP\google_sa.json"
-          Set-Content -Path $p -Value $env:GOOGLE_APP_CREDS_JSON -Encoding UTF8
-          Write-Host "Wrote creds to $p"
+         $p = Join-Path $env:RUNNER_TEMP "google_sa.json"
+         Set-Content -Path $p -Value $env:GOOGLE_APP_CREDS_JSON -Encoding UTF8
+         # Export for subsequent steps in this job:
+         "GOOGLE_APP_CREDS=$p" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Wrote creds to $p and exported GOOGLE_APP_CREDS"
+
 
       # Cache pip wheels between runs (Windows path)
       - name: Cache pip
